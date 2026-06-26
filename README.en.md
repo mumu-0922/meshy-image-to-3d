@@ -68,6 +68,26 @@ python3 tools/ai3d/meshy_client.py image-to-3d \
 
 Rule of thumb: props/items/obstacles use `--format glb`; characters that enter retopo/bind/retarget workflows use `--format fbx`. Meshy supports `glb`, `obj`, `fbx`, `stl`, `usdz`, and `3mf`.
 
+## Character rigging
+
+For characters, let Meshy generate the model, textures, and rig. Reuse the old Unity runner only for animation clips/Animator. Prefer `--task-json` from image-to-3D output because it keeps the Meshy `input_task_id` and avoids a public model URL.
+
+```bash
+python3 tools/ai3d/meshy_client.py rig-character \
+  --task-json Assets/QuizRush/Generated/AI3D/female_runner_pink_ponytail_01/source/meshy-task.json \
+  --name female_runner_pink_ponytail_01 \
+  --out Assets/QuizRush/Generated/AI3D/female_runner_pink_ponytail_01/rigged \
+  --height-meters 1.35
+```
+
+Then wire the rigged FBX to the existing runner animation in Unity/Tuanjie:
+
+```text
+Tools -> QuizRush -> Wire Meshy Rigged Female Runner
+```
+
+The menu copies the rigged FBX into `Assets/QuizRush/Generated/Runner/Current/FemaleRunnerPinkPonytail.fbx`, imports it as Humanoid, creates `FemaleRunnerPinkPonytailController.controller`, reuses the run clip from `HunyuanRunner.fbx`, and overwrites `Assets/QuizRush/Generated/Runner/Current/AnimatedCharacter.prefab`.
+
 
 ## Batch parallel generation
 
@@ -121,4 +141,4 @@ README.en.md
 
 - `meshy_api_key.example` is a placeholder only.
 - Do not commit `.secrets/meshy_api_key` with a real key.
-- The client redacts Meshy signed download URLs before archiving `meshy-task.json`.
+- The client redacts Meshy signed download URLs before archiving `meshy-task.json` and `rigging-task.json`.

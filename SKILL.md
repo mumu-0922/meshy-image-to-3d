@@ -37,6 +37,35 @@ python3 tools/ai3d/meshy_client.py image-to-3d \
 
 Format rule: props/items/obstacles default to `--format glb`; characters that must reuse an existing skeleton/Animator pipeline should use `--format fbx`. Meshy supports `glb`, `obj`, `fbx`, `stl`, `usdz`, and `3mf`.
 
+## Character rigging with Meshy
+
+For characters, Meshy should own model, texture, and auto-rigging. Reuse the old Unity runner only for animation clips/Animator, not for mesh or skin transfer. Prefer `--task-json` from the image-to-3D output because it preserves the Meshy `input_task_id` without needing a public model URL.
+
+```bash
+python3 tools/ai3d/meshy_client.py rig-character \
+  --task-json Assets/QuizRush/Generated/AI3D/female_runner_pink_ponytail_01/source/meshy-task.json \
+  --name female_runner_pink_ponytail_01 \
+  --out Assets/QuizRush/Generated/AI3D/female_runner_pink_ponytail_01/rigged \
+  --height-meters 1.35
+```
+
+Expected rigging output:
+
+```text
+Assets/QuizRush/Generated/AI3D/<asset_slug>/rigged/
+├── model/<asset_slug>_rigged.fbx
+├── source/rigging-task.json
+└── README.md
+```
+
+Then wire the rigged FBX to the existing runner animation in Unity/Tuanjie with:
+
+```text
+Tools -> QuizRush -> Wire Meshy Rigged Female Runner
+```
+
+This menu copies the rigged Meshy FBX into `Assets/QuizRush/Generated/Runner/Current/FemaleRunnerPinkPonytail.fbx`, imports it as Humanoid, creates `FemaleRunnerPinkPonytailController.controller`, reuses the run clip from `HunyuanRunner.fbx`, and overwrites `Assets/QuizRush/Generated/Runner/Current/AnimatedCharacter.prefab`.
+
 ## Preconditions
 
 - Verify `tools/ai3d/meshy_client.py` exists; if missing, copy the bundled `scripts/meshy_client.py` into `tools/ai3d/meshy_client.py`.
@@ -183,6 +212,7 @@ Before assuming a prefab is used, inspect `Assets/QuizRush/Runtime/Scripts/QuizR
 3. `install-project` syncs the bundled client into `tools/ai3d/meshy_client.py` and can copy the key template locally.
 4. `make-manifest` creates editable batch manifests from image directories.
 5. `--summary batch-summary.json` records succeeded/skipped/failed items for reruns and review.
+6. `rig-character` downloads rigged FBX output and redacts rigging result URLs before archiving.
 
 ## Verify before reporting
 

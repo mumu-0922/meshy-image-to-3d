@@ -90,6 +90,35 @@ python3 tools/ai3d/meshy_client.py image-to-3d \
 
 推荐规则：道具/障碍物用 `--format glb`；人物/需要复用 Animator、Avatar、骨骼动画的资产用 `--format fbx`。Meshy 支持 `glb`、`obj`、`fbx`、`stl`、`usdz`、`3mf`。
 
+## 人物 Meshy 自动绑骨
+
+人物主流程是 Meshy 生模型、贴图和骨骼；旧角色只复用跑步动作/Animator，不做旧皮肤权重迁移。优先用 image-to-3D 输出的 `source/meshy-task.json` 作为输入：
+
+```bash
+python3 tools/ai3d/meshy_client.py rig-character \
+  --task-json Assets/QuizRush/Generated/AI3D/female_runner_pink_ponytail_01/source/meshy-task.json \
+  --name female_runner_pink_ponytail_01 \
+  --out Assets/QuizRush/Generated/AI3D/female_runner_pink_ponytail_01/rigged \
+  --height-meters 1.35
+```
+
+输出：
+
+```text
+Assets/QuizRush/Generated/AI3D/<asset_slug>/rigged/
+├── model/<asset_slug>_rigged.fbx
+├── source/rigging-task.json
+└── README.md
+```
+
+然后在 Unity/Tuanjie 执行：
+
+```text
+Tools -> QuizRush -> Wire Meshy Rigged Female Runner
+```
+
+该菜单会把 rigged FBX 复制到 `Assets/QuizRush/Generated/Runner/Current/FemaleRunnerPinkPonytail.fbx`，设置 Humanoid，创建 `FemaleRunnerPinkPonytailController.controller`，复用 `HunyuanRunner.fbx` 里的跑步动作，并覆盖 `Assets/QuizRush/Generated/Runner/Current/AnimatedCharacter.prefab`。
+
 ## 批量并行生成
 
 从图片目录批量生成：
@@ -175,7 +204,7 @@ Meshy 队列并发受账号档位限制。保守默认：
 - `--summary batch-summary.json`：记录成功、跳过、失败、模型路径、task id 和错误。
 - `make-manifest`：先生成可编辑 manifest，再消耗 Meshy 额度。
 - `install-project`：把 skill 内置脚本同步到 Unity 项目的 `tools/ai3d/meshy_client.py`。
-- Meshy 签名下载 URL 会在 `meshy-task.json` 中脱敏为 `<downloaded-and-redacted>`。
+- Meshy 签名下载 URL 会在 `meshy-task.json` 和 `rigging-task.json` 中脱敏为 `<downloaded-and-redacted>`。
 
 ## 仓库内容
 
