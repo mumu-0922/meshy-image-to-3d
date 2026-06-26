@@ -88,6 +88,8 @@ Tools -> QuizRush -> Wire Meshy Rigged Female Runner
 
 The menu copies the rigged FBX into `Assets/QuizRush/Generated/Runner/Current/FemaleRunnerPinkPonytail.fbx`, imports it as Humanoid, creates `FemaleRunnerPinkPonytailController.controller`, reuses the run clip from `HunyuanRunner.fbx`, and overwrites `Assets/QuizRush/Generated/Runner/Current/AnimatedCharacter.prefab`.
 
+`rig-character` also extracts embedded FBX PNG textures to `rigged/textures/texture_0.png`; use that texture when Unity imports the rigged FBX with a blank material.
+
 
 ## Batch parallel generation
 

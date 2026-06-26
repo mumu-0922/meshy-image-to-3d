@@ -251,6 +251,30 @@ def download_url(url: str, dest: Path) -> None:
         raise MeshyError(f"Download network error for {dest.name}: {exc}") from exc
 
 
+def extract_embedded_pngs(binary_path: Path, out_dir: Path, name_prefix: str = "texture") -> List[Path]:
+    data = binary_path.read_bytes()
+    png_signature = b"\x89PNG\r\n\x1a\n"
+    png_end = b"IEND\xaeB`\x82"
+    paths: List[Path] = []
+    search_from = 0
+
+    while True:
+        start = data.find(png_signature, search_from)
+        if start < 0:
+            break
+        end = data.find(png_end, start)
+        if end < 0:
+            break
+
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / f"{name_prefix}_{len(paths)}.png"
+        out_path.write_bytes(data[start:end + len(png_end)])
+        paths.append(out_path)
+        search_from = end + len(png_end)
+
+    return paths
+
+
 def should_redact_value(key: str, value: Any) -> bool:
     if not isinstance(value, str):
         return False
@@ -640,6 +664,11 @@ def generate_rigged_character(
 
     print(f"{log_prefix} downloading rigged FBX -> {rigged_fbx_path}", flush=True)
     download_url(str(fbx_url), rigged_fbx_path)
+
+    texture_dir = out_dir / "textures"
+    extracted_textures = extract_embedded_pngs(rigged_fbx_path, texture_dir, "texture")
+    for texture_path in extracted_textures:
+        print(f"{log_prefix} extracted embedded texture -> {texture_path}", flush=True)
 
     if download_glb and result.get("rigged_character_glb_url"):
         rigged_glb_path = model_dir / f"{asset_name}_rigged.glb"

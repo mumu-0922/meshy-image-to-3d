@@ -107,6 +107,7 @@ python3 tools/ai3d/meshy_client.py rig-character \
 ```text
 Assets/QuizRush/Generated/AI3D/<asset_slug>/rigged/
 ├── model/<asset_slug>_rigged.fbx
+├── textures/texture_0.png
 ├── source/rigging-task.json
 └── README.md
 ```

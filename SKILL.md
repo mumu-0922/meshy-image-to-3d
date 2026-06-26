@@ -54,6 +54,7 @@ Expected rigging output:
 ```text
 Assets/QuizRush/Generated/AI3D/<asset_slug>/rigged/
 ├── model/<asset_slug>_rigged.fbx
+├── textures/texture_0.png
 ├── source/rigging-task.json
 └── README.md
 ```
@@ -212,7 +213,7 @@ Before assuming a prefab is used, inspect `Assets/QuizRush/Runtime/Scripts/QuizR
 3. `install-project` syncs the bundled client into `tools/ai3d/meshy_client.py` and can copy the key template locally.
 4. `make-manifest` creates editable batch manifests from image directories.
 5. `--summary batch-summary.json` records succeeded/skipped/failed items for reruns and review.
-6. `rig-character` downloads rigged FBX output and redacts rigging result URLs before archiving.
+6. `rig-character` downloads rigged FBX output, extracts embedded PNG textures from the FBX to `rigged/textures/`, and redacts rigging result URLs before archiving.
 
 ## Verify before reporting
 
