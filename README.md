@@ -48,6 +48,31 @@ python3 tools/ai3d/meshy_client.py image-to-3d \
   --target-polycount 12000
 ```
 
+
+## Batch parallel generation
+
+Generate many images in parallel from a directory:
+
+```bash
+python3 tools/ai3d/meshy_client.py batch-image-to-3d \
+  --image-dir docs/V2/VisualReferences/AI3DConcepts \
+  --out-root Assets/QuizRush/Generated/AI3D \
+  --concurrency 4
+```
+
+Or use a manifest for stable names:
+
+```json
+{
+  "assets": [
+    {"image": "docs/V2/VisualReferences/AI3DConcepts/coin.png", "name": "coin"},
+    {"image": "docs/V2/VisualReferences/AI3DConcepts/magnet.png", "name": "magnet_powerup"}
+  ]
+}
+```
+
+Meshy queue concurrency is account-plan dependent. Use `--concurrency 4` by default; known published limits are Pro 10, Studio 20, Enterprise 50 by default/customizable.
+
 ## Repository contents
 
 ```text

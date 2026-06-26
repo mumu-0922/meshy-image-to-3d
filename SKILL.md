@@ -89,6 +89,41 @@ Assets/QuizRush/Generated/AI3D/<asset_slug>/
 
 Confirm `source/meshy-task.json` redacts signed URLs as `<downloaded-and-redacted>`.
 
+
+## Batch parallel generation
+
+Use `batch-image-to-3d` when generating several approved item/obstacle images. Default to `--concurrency 4` unless the user specifies a plan limit. Meshy published queue concurrency limits are plan-dependent: Pro 10, Studio 20, Enterprise 50 by default/customizable. Stay below the account limit; if unsure, use 4.
+
+Directory mode:
+
+```bash
+python3 tools/ai3d/meshy_client.py batch-image-to-3d \
+  --image-dir docs/V2/VisualReferences/AI3DConcepts \
+  --out-root Assets/QuizRush/Generated/AI3D \
+  --concurrency 4 \
+  --target-polycount 12000
+```
+
+Manifest mode gives stable names and per-asset overrides:
+
+```json
+{
+  "assets": [
+    {"image": "docs/V2/VisualReferences/AI3DConcepts/coin.png", "name": "coin"},
+    {"image": "docs/V2/VisualReferences/AI3DConcepts/magnet.png", "name": "magnet_powerup"}
+  ]
+}
+```
+
+```bash
+python3 tools/ai3d/meshy_client.py batch-image-to-3d \
+  --manifest docs/V2/VisualReferences/AI3DConcepts/batch.json \
+  --out-root Assets/QuizRush/Generated/AI3D \
+  --concurrency 4
+```
+
+Run `--dry-run` first when names/paths matter.
+
 ## Optional Unity prefab build
 
 If the user wants runtime prefabs, use Unity/Tuanjie:
