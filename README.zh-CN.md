@@ -2,16 +2,16 @@
 
 [中文](./README.zh-CN.md) | [English](./README.en.md)
 
-这是一个 Codex skill，用于把已确认的 PNG/JPG 概念图，通过 Meshy `image-to-3d` 生成 Unity / Tuanjie 游戏项目可用的 GLB 3D 资产。
+这是一个 Codex skill，用于把已确认的 PNG/JPG 概念图，通过 Meshy `image-to-3d` 生成 Unity / Tuanjie 游戏项目可用的 GLB/FBX 3D 资产。
 
 ## 功能
 
 - 使用内置的 `scripts/meshy_client.py` Meshy 客户端。
 - 将本地 PNG/JPG 图片提交为 Meshy image-to-3D 任务。
-- 将 GLB 下载到 `Assets/QuizRush/Generated/AI3D/<asset_slug>/model/`。
+- 将 GLB/FBX 下载到 `Assets/QuizRush/Generated/AI3D/<asset_slug>/model/`。
 - 归档 Meshy 任务元数据，并自动脱敏签名下载 URL。
 - 支持可选的 Unity/Tuanjie Runtime Prefab 构建说明。
-- 支持批量并行生成、断点续跑、429 自动退避、manifest 和 batch summary。
+- 支持批量并行生成、断点续跑、429 自动退避、manifest、batch summary、以及 `--format glb|fbx`。
 
 ## 安装到项目
 
@@ -58,7 +58,8 @@ python3 tools/ai3d/meshy_client.py image-to-3d \
   --image docs/V2/VisualReferences/UI/production-v4/final/items/image.png \
   --name magnet_powerup \
   --out Assets/QuizRush/Generated/AI3D/magnet_powerup \
-  --target-polycount 12000
+  --target-polycount 12000 \
+  --format glb
 ```
 
 输出结构：
@@ -67,10 +68,27 @@ python3 tools/ai3d/meshy_client.py image-to-3d \
 Assets/QuizRush/Generated/AI3D/<asset_slug>/
 ├── source/<source-image>
 ├── source/meshy-task.json
-├── model/<asset_slug>.glb
+├── model/<asset_slug>.<format>
 ├── preview/
 └── README.md
 ```
+
+## 人物 FBX 生成
+
+人物如果要进入“重拓扑 + 绑定骨骼 + 复用当前 Runner 动画”流程，直接请求 FBX，并尽量让 Meshy 产出 A-pose/T-pose 和四边面拓扑：
+
+```bash
+python3 tools/ai3d/meshy_client.py image-to-3d \
+  --image docs/V2/VisualReferences/female-runner-pink-ponytail-v2/female_runner_pink_ponytail_01.png \
+  --name female_runner_pink_ponytail_01 \
+  --out Assets/QuizRush/Generated/AI3D/female_runner_pink_ponytail_01 \
+  --target-polycount 30000 \
+  --format fbx \
+  --topology quad \
+  --pose-mode a-pose
+```
+
+推荐规则：道具/障碍物用 `--format glb`；人物/需要复用 Animator、Avatar、骨骼动画的资产用 `--format fbx`。Meshy 支持 `glb`、`obj`、`fbx`、`stl`、`usdz`、`3mf`。
 
 ## 批量并行生成
 
@@ -91,7 +109,7 @@ python3 tools/ai3d/meshy_client.py batch-image-to-3d \
 {
   "assets": [
     {"image": "docs/V2/VisualReferences/AI3DConcepts/coin.png", "name": "coin"},
-    {"image": "docs/V2/VisualReferences/AI3DConcepts/magnet.png", "name": "magnet_powerup"}
+    {"image": "docs/V2/VisualReferences/AI3DConcepts/magnet.png", "name": "magnet_powerup", "format": "glb"}
   ]
 }
 ```
@@ -105,6 +123,17 @@ python3 tools/ai3d/meshy_client.py batch-image-to-3d \
   --concurrency 4 \
   --skip-existing \
   --summary batch-summary.json
+```
+
+Manifest 可为人物单独覆盖格式：
+
+```json
+{
+  "assets": [
+    {"image": "docs/V2/VisualReferences/AI3DConcepts/coin.png", "name": "coin", "format": "glb"},
+    {"image": "docs/V2/VisualReferences/female-runner-pink-ponytail-v2/female_runner_pink_ponytail_01.png", "name": "female_runner_pink_ponytail_01", "format": "fbx", "target_polycount": 30000, "topology": "quad", "pose_mode": "a-pose"}
+  ]
+}
 ```
 
 ## Manifest 自动生成
@@ -142,7 +171,7 @@ Meshy 队列并发受账号档位限制。保守默认：
 
 ## 断点续跑和安全
 
-- `--skip-existing`：已有 `model/<name>.glb` 时跳过，避免重复烧额度。
+- `--skip-existing`：已有 `model/<name>.<format>` 时跳过，避免重复烧额度。
 - `--summary batch-summary.json`：记录成功、跳过、失败、模型路径、task id 和错误。
 - `make-manifest`：先生成可编辑 manifest，再消耗 Meshy 额度。
 - `install-project`：把 skill 内置脚本同步到 Unity 项目的 `tools/ai3d/meshy_client.py`。

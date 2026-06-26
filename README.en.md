@@ -8,9 +8,9 @@ Codex skill for generating QuizRush / Unity / Tuanjie 3D game assets from approv
 
 - Uses the bundled `scripts/meshy_client.py` Meshy client.
 - Converts local PNG/JPG images to Meshy image-to-3D tasks.
-- Downloads GLB output into `Assets/QuizRush/Generated/AI3D/<asset_slug>/model/`.
+- Downloads GLB/FBX output into `Assets/QuizRush/Generated/AI3D/<asset_slug>/model/`.
 - Archives Meshy task metadata with signed URLs redacted.
-- Documents optional Unity/Tuanjie prefab build steps.
+- Documents optional Unity/Tuanjie prefab build steps for GLB props and FBX character handoff notes.
 
 ## Install into a project
 
@@ -47,8 +47,26 @@ python3 tools/ai3d/meshy_client.py image-to-3d \
   --image docs/V2/VisualReferences/UI/production-v4/final/items/image.png \
   --name magnet_powerup \
   --out Assets/QuizRush/Generated/AI3D/magnet_powerup \
-  --target-polycount 12000
+  --target-polycount 12000 \
+  --format glb
 ```
+
+## Character FBX command
+
+For characters that will reuse an existing runner skeleton, Avatar, Animator Controller, or animation set, request FBX and a rigging-friendly pose/topology:
+
+```bash
+python3 tools/ai3d/meshy_client.py image-to-3d \
+  --image docs/V2/VisualReferences/female-runner-pink-ponytail-v2/female_runner_pink_ponytail_01.png \
+  --name female_runner_pink_ponytail_01 \
+  --out Assets/QuizRush/Generated/AI3D/female_runner_pink_ponytail_01 \
+  --target-polycount 30000 \
+  --format fbx \
+  --topology quad \
+  --pose-mode a-pose
+```
+
+Rule of thumb: props/items/obstacles use `--format glb`; characters that enter retopo/bind/retarget workflows use `--format fbx`. Meshy supports `glb`, `obj`, `fbx`, `stl`, `usdz`, and `3mf`.
 
 
 ## Batch parallel generation
@@ -70,16 +88,18 @@ Or use a manifest for stable names:
 {
   "assets": [
     {"image": "docs/V2/VisualReferences/AI3DConcepts/coin.png", "name": "coin"},
-    {"image": "docs/V2/VisualReferences/AI3DConcepts/magnet.png", "name": "magnet_powerup"}
+    {"image": "docs/V2/VisualReferences/AI3DConcepts/magnet.png", "name": "magnet_powerup", "format": "glb"}
   ]
 }
 ```
+
+Manifest items can also override `format`, `target_polycount`, `topology`, and `pose_mode` for mixed prop/character batches.
 
 Meshy queue concurrency is account-plan dependent. Use `--concurrency 4` by default; known published limits are Pro 10, Studio 20, Enterprise 50 by default/customizable.
 
 ## Resumability and safety
 
-- Use `--skip-existing` to resume without regenerating completed GLBs.
+- Use `--skip-existing` to resume without regenerating completed `model/<name>.<format>` outputs.
 - Meshy `429` / queue-limit responses are retried with exponential backoff by default.
 - Use `make-manifest` to generate an editable manifest before spending credits.
 - Batch runs write `batch-summary.json` by default.

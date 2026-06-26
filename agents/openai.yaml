@@ -1,6 +1,6 @@
 interface:
   display_name: "Meshy Image to 3D"
-  short_description: "Generate GLB assets from images with Meshy"
-  default_prompt: "Use $meshy-image-to-3d to generate a QuizRush GLB from this approved item image."
+  short_description: "Generate GLB/FBX assets from images with Meshy"
+  default_prompt: "Use $meshy-image-to-3d to generate a QuizRush GLB/FBX from this approved asset image."
 policy:
   allow_implicit_invocation: true
