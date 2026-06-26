@@ -12,7 +12,8 @@ Usage:
   python3 tools/ai3d/meshy_client.py batch-image-to-3d \
     --image-dir docs/V2/VisualReferences/AI3DConcepts \
     --out-root Assets/QuizRush/Generated/AI3D \
-    --concurrency 4
+    --concurrency 4 \
+    --skip-existing
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 MESHY_BASE_URL = "https://api.meshy.ai"
 IMAGE_TO_3D_ENDPOINT = f"{MESHY_BASE_URL}/openapi/v1/image-to-3d"
@@ -38,11 +39,25 @@ DEFAULT_POLL_INTERVAL_SECONDS = 10
 DEFAULT_TIMEOUT_SECONDS = 60
 DEFAULT_BATCH_CONCURRENCY = 4
 DEFAULT_OUT_ROOT = "Assets/QuizRush/Generated/AI3D"
+DEFAULT_RATE_LIMIT_RETRIES = 5
+DEFAULT_RATE_LIMIT_BACKOFF_SECONDS = 30
 SUPPORTED_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
+RATE_LIMIT_MARKERS = ("RateLimitExceeded", "NoMoreConcurrentTasks", "Too Many Requests")
 
 
 class MeshyError(RuntimeError):
     pass
+
+
+class MeshyHttpError(MeshyError):
+    def __init__(self, status_code: int, detail: str) -> None:
+        super().__init__(f"Meshy API HTTP {status_code}: {detail}")
+        self.status_code = status_code
+        self.detail = detail
+
+    @property
+    def is_rate_limit(self) -> bool:
+        return self.status_code == 429 or any(marker in self.detail for marker in RATE_LIMIT_MARKERS)
 
 
 def require_api_key(api_key_file: Optional[str] = None) -> str:
@@ -54,18 +69,13 @@ def require_api_key(api_key_file: Optional[str] = None) -> str:
             api_key = key_path.read_text(encoding="utf-8").strip()
 
     if not api_key:
-        raise MeshyError(
-            "MESHY_API_KEY is not set. Set it in your shell or put it in .secrets/meshy_api_key."
-        )
+        raise MeshyError("MESHY_API_KEY is not set. Set it in your shell or put it in .secrets/meshy_api_key.")
     return api_key
 
 
 def json_request(method: str, url: str, api_key: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     body = None
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Accept": "application/json",
-    }
+    headers = {"Authorization": f"Bearer {api_key}", "Accept": "application/json"}
 
     if payload is not None:
         body = json.dumps(payload).encode("utf-8")
@@ -79,9 +89,32 @@ def json_request(method: str, url: str, api_key: str, payload: Optional[Dict[str
             return json.loads(raw) if raw else {}
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
-        raise MeshyError(f"Meshy API HTTP {exc.code}: {detail}") from exc
+        raise MeshyHttpError(exc.code, detail) from exc
     except urllib.error.URLError as exc:
         raise MeshyError(f"Meshy API network error: {exc}") from exc
+
+
+def request_with_rate_limit_retry(
+    operation_name: str,
+    func,
+    retries: int,
+    backoff_seconds: int,
+    log_prefix: str,
+):
+    attempt = 0
+    while True:
+        try:
+            return func()
+        except MeshyHttpError as exc:
+            if not exc.is_rate_limit or attempt >= retries:
+                raise
+            delay = backoff_seconds * (2 ** attempt)
+            attempt += 1
+            print(
+                f"{log_prefix} rate limited during {operation_name}; retry={attempt}/{retries} wait={delay}s",
+                flush=True,
+            )
+            time.sleep(delay)
 
 
 def file_to_data_uri(image_path: Path) -> str:
@@ -98,7 +131,7 @@ def file_to_data_uri(image_path: Path) -> str:
     return f"data:{mime_type};base64,{encoded}"
 
 
-def safe_write_json(path: Path, data: Dict[str, Any]) -> None:
+def safe_write_json(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -141,13 +174,21 @@ def poll_task(
     task_id: str,
     interval_seconds: int,
     max_wait_seconds: int,
-    log_prefix: str = "[meshy]",
+    log_prefix: str,
+    rate_limit_retries: int,
+    rate_limit_backoff_seconds: int,
 ) -> Dict[str, Any]:
     deadline = time.time() + max_wait_seconds
     last_status = ""
 
     while True:
-        task = retrieve_image_to_3d_task(api_key, task_id)
+        task = request_with_rate_limit_retry(
+            "poll",
+            lambda: retrieve_image_to_3d_task(api_key, task_id),
+            retries=rate_limit_retries,
+            backoff_seconds=rate_limit_backoff_seconds,
+            log_prefix=log_prefix,
+        )
         status = str(task.get("status", "UNKNOWN"))
         progress = task.get("progress", 0)
 
@@ -181,7 +222,6 @@ def download_url(url: str, dest: Path) -> None:
 
 
 def redact_task_for_archive(task: Dict[str, Any]) -> Dict[str, Any]:
-    """Archive useful task metadata without preserving signed asset URLs long-term."""
     redacted = dict(task)
     if "model_url" in redacted:
         redacted["model_url"] = "<downloaded-and-redacted>"
@@ -224,6 +264,10 @@ Generated by `tools/ai3d/meshy_client.py`.
     (out_dir / "README.md").write_text(readme, encoding="utf-8")
 
 
+def expected_glb_path(out_dir: Path, asset_name: str) -> Path:
+    return out_dir / "model" / f"{asset_name}.glb"
+
+
 def generate_image_to_3d(
     api_key: str,
     image_path: Path,
@@ -235,12 +279,20 @@ def generate_image_to_3d(
     model_type: str,
     poll_interval: int,
     max_wait: int,
-    log_prefix: str = "[meshy]",
-) -> Path:
+    log_prefix: str,
+    skip_existing: bool,
+    rate_limit_retries: int,
+    rate_limit_backoff_seconds: int,
+) -> Tuple[str, Path, Optional[str]]:
     image_path = image_path.resolve()
     asset_name = asset_name.strip()
     if not asset_name:
         raise MeshyError("asset name must not be empty")
+
+    glb_path = expected_glb_path(out_dir, asset_name)
+    if skip_existing and glb_path.exists() and glb_path.stat().st_size > 0:
+        print(f"{log_prefix} skip existing GLB -> {glb_path}", flush=True)
+        return "skipped", glb_path, None
 
     source_dir = out_dir / "source"
     model_dir = out_dir / "model"
@@ -254,13 +306,19 @@ def generate_image_to_3d(
         shutil.copy2(image_path, source_copy)
 
     print(f"{log_prefix} creating image-to-3d task for {asset_name}", flush=True)
-    task_id = create_image_to_3d_task(
-        api_key=api_key,
-        image_data_uri=file_to_data_uri(image_path),
-        target_polycount=target_polycount,
-        enable_pbr=enable_pbr,
-        should_remesh=should_remesh,
-        model_type=model_type,
+    task_id = request_with_rate_limit_retry(
+        "create",
+        lambda: create_image_to_3d_task(
+            api_key=api_key,
+            image_data_uri=file_to_data_uri(image_path),
+            target_polycount=target_polycount,
+            enable_pbr=enable_pbr,
+            should_remesh=should_remesh,
+            model_type=model_type,
+        ),
+        retries=rate_limit_retries,
+        backoff_seconds=rate_limit_backoff_seconds,
+        log_prefix=log_prefix,
     )
     print(f"{log_prefix} created task {task_id}", flush=True)
 
@@ -270,6 +328,8 @@ def generate_image_to_3d(
         interval_seconds=poll_interval,
         max_wait_seconds=max_wait,
         log_prefix=log_prefix,
+        rate_limit_retries=rate_limit_retries,
+        rate_limit_backoff_seconds=rate_limit_backoff_seconds,
     )
 
     model_urls = task.get("model_urls") or {}
@@ -277,7 +337,6 @@ def generate_image_to_3d(
     if not glb_url:
         raise MeshyError(f"Succeeded task has no GLB URL: {task}")
 
-    glb_path = model_dir / f"{asset_name}.glb"
     print(f"{log_prefix} downloading GLB -> {glb_path}", flush=True)
     download_url(str(glb_url), glb_path)
 
@@ -298,7 +357,7 @@ def generate_image_to_3d(
 
     print(f"{log_prefix} done", flush=True)
     print(f"{log_prefix} model: {glb_path}", flush=True)
-    return glb_path
+    return "succeeded", glb_path, task_id
 
 
 def run_image_to_3d(args: argparse.Namespace) -> int:
@@ -314,6 +373,10 @@ def run_image_to_3d(args: argparse.Namespace) -> int:
         model_type=args.model_type,
         poll_interval=args.poll_interval,
         max_wait=args.max_wait,
+        log_prefix="[meshy]",
+        skip_existing=args.skip_existing,
+        rate_limit_retries=args.rate_limit_retries,
+        rate_limit_backoff_seconds=args.rate_limit_backoff,
     )
     return 0
 
@@ -397,6 +460,18 @@ def build_batch_items(args: argparse.Namespace) -> List[Dict[str, Any]]:
     return items
 
 
+def item_summary(item: Dict[str, Any], status: str, model_path: Optional[str] = None, task_id: Optional[str] = None, error: Optional[str] = None) -> Dict[str, Any]:
+    return {
+        "name": str(item["name"]),
+        "image": str(item["image"]),
+        "out": str(item["out"]),
+        "status": status,
+        "model": model_path,
+        "task_id": task_id,
+        "error": error,
+    }
+
+
 def run_batch_image_to_3d(args: argparse.Namespace) -> int:
     if args.concurrency < 1:
         raise MeshyError("--concurrency must be >= 1")
@@ -405,23 +480,32 @@ def run_batch_image_to_3d(args: argparse.Namespace) -> int:
     if not items:
         raise MeshyError("No images found for batch generation")
 
-    print(
-        f"[meshy:batch] assets={len(items)} concurrency={args.concurrency} out_root={args.out_root}",
-        flush=True,
-    )
+    print(f"[meshy:batch] assets={len(items)} concurrency={args.concurrency} out_root={args.out_root}", flush=True)
+
+    summary: Dict[str, Any] = {
+        "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "concurrency": args.concurrency,
+        "out_root": str(args.out_root),
+        "items": [],
+    }
 
     if args.dry_run:
         for item in items:
+            model = expected_glb_path(Path(item["out"]), str(item["name"]))
             print(f"[meshy:batch] dry-run name={item['name']} image={item['image']} out={item['out']}")
+            summary["items"].append(item_summary(item, "planned", str(model)))
+        if args.summary:
+            safe_write_json(Path(args.summary), summary)
         return 0
 
     api_key = require_api_key(args.api_key_file)
     failures: List[str] = []
     successes: List[str] = []
+    skipped: List[str] = []
 
-    def worker(item: Dict[str, Any]) -> str:
+    def worker(item: Dict[str, Any]) -> Dict[str, Any]:
         name = str(item["name"])
-        glb_path = generate_image_to_3d(
+        status, glb_path, task_id = generate_image_to_3d(
             api_key=api_key,
             image_path=Path(item["image"]),
             out_dir=Path(item["out"]),
@@ -433,25 +517,89 @@ def run_batch_image_to_3d(args: argparse.Namespace) -> int:
             poll_interval=args.poll_interval,
             max_wait=args.max_wait,
             log_prefix=f"[meshy:{name}]",
+            skip_existing=args.skip_existing,
+            rate_limit_retries=args.rate_limit_retries,
+            rate_limit_backoff_seconds=args.rate_limit_backoff,
         )
-        return str(glb_path)
+        return item_summary(item, status, str(glb_path), task_id)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.concurrency) as executor:
-        future_to_name = {executor.submit(worker, item): str(item["name"]) for item in items}
-        for future in concurrent.futures.as_completed(future_to_name):
-            name = future_to_name[future]
+        future_to_item = {executor.submit(worker, item): item for item in items}
+        for future in concurrent.futures.as_completed(future_to_item):
+            item = future_to_item[future]
+            name = str(item["name"])
             try:
-                glb_path = future.result()
-                successes.append(name)
-                print(f"[meshy:batch] succeeded name={name} model={glb_path}", flush=True)
-            except Exception as exc:  # noqa: BLE001 - print every asset failure, then return non-zero.
+                result = future.result()
+                summary["items"].append(result)
+                if result["status"] == "skipped":
+                    skipped.append(name)
+                    print(f"[meshy:batch] skipped name={name} model={result['model']}", flush=True)
+                else:
+                    successes.append(name)
+                    print(f"[meshy:batch] succeeded name={name} model={result['model']}", flush=True)
+            except Exception as exc:  # noqa: BLE001 - collect every asset failure, then return non-zero.
                 failures.append(name)
+                summary["items"].append(item_summary(item, "failed", error=str(exc)))
                 print(f"[meshy:batch:error] failed name={name}: {exc}", file=sys.stderr, flush=True)
 
-    print(f"[meshy:batch] complete succeeded={len(successes)} failed={len(failures)}", flush=True)
+    summary["finished_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    summary["counts"] = {"succeeded": len(successes), "skipped": len(skipped), "failed": len(failures)}
+    if args.summary:
+        safe_write_json(Path(args.summary), summary)
+
+    print(
+        f"[meshy:batch] complete succeeded={len(successes)} skipped={len(skipped)} failed={len(failures)}",
+        flush=True,
+    )
     if failures:
         print(f"[meshy:batch:error] failed assets: {', '.join(failures)}", file=sys.stderr, flush=True)
         return 1
+    return 0
+
+
+def run_make_manifest(args: argparse.Namespace) -> int:
+    image_paths = iter_image_dir(Path(args.image_dir), args.recursive)
+    if not image_paths:
+        raise MeshyError("No images found for manifest generation")
+
+    assets = []
+    used_names = set()
+    for image_path in image_paths:
+        base_name = slugify(image_path.stem)
+        name = base_name
+        suffix = 2
+        while name in used_names:
+            name = f"{base_name}_{suffix}"
+            suffix += 1
+        used_names.add(name)
+        assets.append({"image": str(image_path), "name": name})
+
+    manifest = {"assets": assets}
+    if args.out:
+        safe_write_json(Path(args.out), manifest)
+        print(f"[meshy:manifest] wrote {args.out} assets={len(assets)}", flush=True)
+    else:
+        print(json.dumps(manifest, ensure_ascii=False, indent=2))
+    return 0
+
+
+def run_install_project(args: argparse.Namespace) -> int:
+    project_root = Path(args.project_root)
+    source_script = Path(__file__).resolve()
+    dest_script = project_root / "tools" / "ai3d" / "meshy_client.py"
+    dest_script.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source_script, dest_script)
+    print(f"[meshy:install] copied {source_script} -> {dest_script}", flush=True)
+
+    if args.with_key_template:
+        template = source_script.parents[1] / "assets" / ".secrets" / "meshy_api_key.example"
+        dest_key = project_root / ".secrets" / "meshy_api_key"
+        dest_key.parent.mkdir(parents=True, exist_ok=True)
+        if dest_key.exists() and not args.force_key:
+            print(f"[meshy:install] key exists, left untouched: {dest_key}", flush=True)
+        else:
+            shutil.copy2(template, dest_key)
+            print(f"[meshy:install] copied key template -> {dest_key}", flush=True)
     return 0
 
 
@@ -463,6 +611,9 @@ def add_common_generation_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--poll-interval", type=int, default=DEFAULT_POLL_INTERVAL_SECONDS)
     parser.add_argument("--max-wait", type=int, default=1800, help="Max wait seconds per Meshy task")
     parser.add_argument("--api-key-file", default=".secrets/meshy_api_key", help="Optional local file containing Meshy API key")
+    parser.add_argument("--skip-existing", action="store_true", help="Skip when output model/<name>.glb already exists")
+    parser.add_argument("--rate-limit-retries", type=int, default=DEFAULT_RATE_LIMIT_RETRIES, help="Retries for Meshy 429 rate/queue limits")
+    parser.add_argument("--rate-limit-backoff", type=int, default=DEFAULT_RATE_LIMIT_BACKOFF_SECONDS, help="Base seconds for exponential 429 backoff")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -484,8 +635,21 @@ def build_parser() -> argparse.ArgumentParser:
     batch_parser.add_argument("--recursive", action="store_true", help="Recursively scan --image-dir")
     batch_parser.add_argument("--concurrency", type=int, default=DEFAULT_BATCH_CONCURRENCY, help="Parallel Meshy tasks to run")
     batch_parser.add_argument("--dry-run", action="store_true", help="Print planned batch items without calling Meshy")
+    batch_parser.add_argument("--summary", default="batch-summary.json", help="Write batch summary JSON; use empty string to disable")
     add_common_generation_args(batch_parser)
     batch_parser.set_defaults(func=run_batch_image_to_3d)
+
+    manifest_parser = subparsers.add_parser("make-manifest", help="Create a batch manifest from an image directory")
+    manifest_parser.add_argument("--image-dir", required=True, help="Directory containing .png/.jpg/.jpeg concept images")
+    manifest_parser.add_argument("--out", help="Manifest JSON output path; prints to stdout if omitted")
+    manifest_parser.add_argument("--recursive", action="store_true", help="Recursively scan --image-dir")
+    manifest_parser.set_defaults(func=run_make_manifest)
+
+    install_parser = subparsers.add_parser("install-project", help="Copy this bundled client into a Unity project")
+    install_parser.add_argument("--project-root", default=".", help="Unity project root")
+    install_parser.add_argument("--with-key-template", action="store_true", help="Also copy meshy_api_key.example to .secrets/meshy_api_key")
+    install_parser.add_argument("--force-key", action="store_true", help="Overwrite existing .secrets/meshy_api_key when used with --with-key-template")
+    install_parser.set_defaults(func=run_install_project)
 
     return parser
 

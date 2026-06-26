@@ -68,9 +68,9 @@ rg -n "com\.unity\.cloud\.gltfast" Packages/manifest.json Packages/packages-lock
 If the project client or local key file is missing, install the bundled skill files:
 
 ```bash
-mkdir -p tools/ai3d .secrets
-cp .agents/skills/meshy-image-to-3d/scripts/meshy_client.py tools/ai3d/meshy_client.py
-cp .agents/skills/meshy-image-to-3d/assets/.secrets/meshy_api_key.example .secrets/meshy_api_key
+python3 .agents/skills/meshy-image-to-3d/scripts/meshy_client.py install-project \
+  --project-root . \
+  --with-key-template
 ```
 
 Then replace the placeholder inside `.secrets/meshy_api_key` with the real local Meshy key, or set `MESHY_API_KEY` in the shell. Do not commit `.secrets/meshy_api_key` or real keys.
@@ -92,7 +92,7 @@ Confirm `source/meshy-task.json` redacts signed URLs as `<downloaded-and-redacte
 
 ## Batch parallel generation
 
-Use `batch-image-to-3d` when generating several approved item/obstacle images. Default to `--concurrency 4` unless the user specifies a plan limit. Meshy published queue concurrency limits are plan-dependent: Pro 10, Studio 20, Enterprise 50 by default/customizable. Stay below the account limit; if unsure, use 4.
+Use `batch-image-to-3d` when generating several approved item/obstacle images. Default to `--concurrency 4` unless the user specifies a plan limit. Meshy published queue concurrency limits are plan-dependent: Pro 10, Studio 20, Enterprise 50 by default/customizable. Stay below the account limit; if unsure, use 4. Always prefer `--skip-existing` for resumable reruns and keep the default 429 exponential backoff unless debugging.
 
 Directory mode:
 
@@ -101,7 +101,8 @@ python3 tools/ai3d/meshy_client.py batch-image-to-3d \
   --image-dir docs/V2/VisualReferences/AI3DConcepts \
   --out-root Assets/QuizRush/Generated/AI3D \
   --concurrency 4 \
-  --target-polycount 12000
+  --target-polycount 12000 \
+  --skip-existing
 ```
 
 Manifest mode gives stable names and per-asset overrides:
@@ -119,10 +120,20 @@ Manifest mode gives stable names and per-asset overrides:
 python3 tools/ai3d/meshy_client.py batch-image-to-3d \
   --manifest docs/V2/VisualReferences/AI3DConcepts/batch.json \
   --out-root Assets/QuizRush/Generated/AI3D \
-  --concurrency 4
+  --concurrency 4 \
+  --skip-existing \
+  --summary batch-summary.json
 ```
 
-Run `--dry-run` first when names/paths matter.
+Generate a manifest first when names/paths matter:
+
+```bash
+python3 tools/ai3d/meshy_client.py make-manifest \
+  --image-dir docs/V2/VisualReferences/AI3DConcepts \
+  --out docs/V2/VisualReferences/AI3DConcepts/batch.json
+```
+
+Run `--dry-run` before spending Meshy credits.
 
 ## Optional Unity prefab build
 
@@ -135,6 +146,14 @@ Tools -> QuizRush -> Endless 3D -> Build Runtime Prefabs From Generated AI3D
 This reads `Assets/QuizRush/Generated/AI3D/<slug>/model/<slug>.glb` and writes `Assets/QuizRush/Runtime/Resources/QuizRush/Endless/Prefabs/<Name>.prefab`.
 
 Before assuming a prefab is used, inspect `Assets/QuizRush/Runtime/Scripts/QuizRushRunnerStageView.Endless.cs`. Magnet, shield, and dash may intentionally stay billboard visuals for projection readability.
+
+## Five built-in safeguards
+
+1. `--skip-existing` prevents spending credits again when `model/<name>.glb` already exists.
+2. `--rate-limit-retries` and `--rate-limit-backoff` retry Meshy `429` / `NoMoreConcurrentTasks` / `RateLimitExceeded` with exponential backoff.
+3. `install-project` syncs the bundled client into `tools/ai3d/meshy_client.py` and can copy the key template locally.
+4. `make-manifest` creates editable batch manifests from image directories.
+5. `--summary batch-summary.json` records succeeded/skipped/failed items for reruns and review.
 
 ## Verify before reporting
 

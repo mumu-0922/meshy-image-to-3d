@@ -29,9 +29,9 @@ $meshy-image-to-3d 用这张图生3D
 From the Unity project root:
 
 ```bash
-mkdir -p tools/ai3d .secrets
-cp .agents/skills/meshy-image-to-3d/scripts/meshy_client.py tools/ai3d/meshy_client.py
-cp .agents/skills/meshy-image-to-3d/assets/.secrets/meshy_api_key.example .secrets/meshy_api_key
+python3 .agents/skills/meshy-image-to-3d/scripts/meshy_client.py install-project \
+  --project-root . \
+  --with-key-template
 ```
 
 Edit `.secrets/meshy_api_key` and put your real Meshy API key inside, or set `MESHY_API_KEY` in your shell.
@@ -57,7 +57,9 @@ Generate many images in parallel from a directory:
 python3 tools/ai3d/meshy_client.py batch-image-to-3d \
   --image-dir docs/V2/VisualReferences/AI3DConcepts \
   --out-root Assets/QuizRush/Generated/AI3D \
-  --concurrency 4
+  --concurrency 4 \
+  --skip-existing \
+  --summary batch-summary.json
 ```
 
 Or use a manifest for stable names:
@@ -72,6 +74,14 @@ Or use a manifest for stable names:
 ```
 
 Meshy queue concurrency is account-plan dependent. Use `--concurrency 4` by default; known published limits are Pro 10, Studio 20, Enterprise 50 by default/customizable.
+
+## Resumability and safety
+
+- Use `--skip-existing` to resume without regenerating completed GLBs.
+- Meshy `429` / queue-limit responses are retried with exponential backoff by default.
+- Use `make-manifest` to generate an editable manifest before spending credits.
+- Batch runs write `batch-summary.json` by default.
+- Use `install-project` to sync the bundled script into a Unity project.
 
 ## Repository contents
 
