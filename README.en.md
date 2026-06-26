@@ -90,6 +90,32 @@ The menu copies the rigged FBX into `Assets/QuizRush/Generated/Runner/Current/Fe
 
 `rig-character` also extracts embedded FBX PNG textures to `rigged/textures/texture_0.png`; use that texture when Unity imports the rigged FBX with a blank material.
 
+## If the project has no animations
+
+When there is no existing character animation set to reuse, add `--download-basic-animations` to `rig-character` and use Meshy basic walk/run clips as the first playable fallback:
+
+```bash
+python3 tools/ai3d/meshy_client.py rig-character \
+  --task-json Assets/QuizRush/Generated/AI3D/female_runner_pink_ponytail_01/source/meshy-task.json \
+  --name female_runner_pink_ponytail_01 \
+  --out Assets/QuizRush/Generated/AI3D/female_runner_pink_ponytail_01/rigged \
+  --height-meters 1.35 \
+  --download-basic-animations
+```
+
+Expected output:
+
+```text
+Assets/QuizRush/Generated/AI3D/<asset_slug>/rigged/animations/
+├── walking_glb.glb
+├── walking_fbx.fbx
+├── walking_armature_glb.glb
+├── running_glb.glb
+├── running_fbx.fbx
+└── running_armature_glb.glb
+```
+
+Unity/Tuanjie rule: import the new character FBX as Humanoid, import animation FBX files as Humanoid, start with `running_fbx` as a looping Animator state, and disable Root Motion because projection endless-runner position is controlled by gameplay code. Recommended route: Meshy basic running first, add jump/slide/death from Mixamo or Humanoid-compatible authored clips, then polish through art or mocap.
 
 ## Batch parallel generation
 

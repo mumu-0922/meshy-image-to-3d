@@ -1,6 +1,6 @@
 ---
 name: meshy-image-to-3d
-description: Generate QuizRush Unity/Tuanjie 3D game assets from approved PNG/JPG concept images using the project Meshy image-to-3d client, download GLB/FBX output, archive Meshy task metadata safely, and optionally build runtime prefabs. Use when the user says Meshy, 图生3D, image-to-3d, GLB, FBX, AI3D, or asks how to run the project script that turns item, obstacle, or character images into 3D models.
+description: Generate QuizRush Unity/Tuanjie 3D game assets from approved PNG/JPG concept images using the project Meshy image-to-3d client, download GLB/FBX output, archive Meshy task metadata safely, rig humanoid characters, download Meshy basic walking/running animations when no source animations exist, and optionally build runtime prefabs. Use when the user says Meshy, 图生3D, image-to-3d, GLB, FBX, AI3D, character rigging, basic animations, or asks how to run the project script that turns item, obstacle, or character images into 3D models.
 ---
 
 # Meshy Image to 3D
@@ -66,6 +66,33 @@ Tools -> QuizRush -> Wire Meshy Rigged Female Runner
 ```
 
 This menu copies the rigged Meshy FBX into `Assets/QuizRush/Generated/Runner/Current/FemaleRunnerPinkPonytail.fbx`, imports it as Humanoid, creates `FemaleRunnerPinkPonytailController.controller`, reuses the run clip from `HunyuanRunner.fbx`, and overwrites `Assets/QuizRush/Generated/Runner/Current/AnimatedCharacter.prefab`.
+
+## If the project has no existing animations
+
+When there is no old runner animation set to reuse, keep the same `rig-character` flow and add `--download-basic-animations`:
+
+```bash
+python3 tools/ai3d/meshy_client.py rig-character \
+  --task-json Assets/QuizRush/Generated/AI3D/female_runner_pink_ponytail_01/source/meshy-task.json \
+  --name female_runner_pink_ponytail_01 \
+  --out Assets/QuizRush/Generated/AI3D/female_runner_pink_ponytail_01/rigged \
+  --height-meters 1.35 \
+  --download-basic-animations
+```
+
+Expected animation output:
+
+```text
+Assets/QuizRush/Generated/AI3D/<asset_slug>/rigged/animations/
+├── walking_glb.glb
+├── walking_fbx.fbx
+├── walking_armature_glb.glb
+├── running_glb.glb
+├── running_fbx.fbx
+└── running_armature_glb.glb
+```
+
+Use this fallback route: Meshy basic `running_fbx` first to make the character playable, then add jump/slide/death through Mixamo or Humanoid-compatible authored clips, then let art/mocap polish final motion. In Unity/Tuanjie, import the new character FBX and each animation FBX as Humanoid, build an Animator Controller with `running_fbx` as the first loop state, and disable Root Motion because projection endless-runner position is controlled by gameplay code.
 
 ## Preconditions
 
@@ -214,6 +241,7 @@ Before assuming a prefab is used, inspect `Assets/QuizRush/Runtime/Scripts/QuizR
 4. `make-manifest` creates editable batch manifests from image directories.
 5. `--summary batch-summary.json` records succeeded/skipped/failed items for reruns and review.
 6. `rig-character` downloads rigged FBX output, extracts embedded PNG textures from the FBX to `rigged/textures/`, and redacts rigging result URLs before archiving.
+7. `rig-character --download-basic-animations` saves Meshy walking/running fallback clips under `rigged/animations/` for projects with no existing animation library.
 
 ## Verify before reporting
 

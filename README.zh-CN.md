@@ -120,6 +120,33 @@ Tools -> QuizRush -> Wire Meshy Rigged Female Runner
 
 该菜单会把 rigged FBX 复制到 `Assets/QuizRush/Generated/Runner/Current/FemaleRunnerPinkPonytail.fbx`，设置 Humanoid，创建 `FemaleRunnerPinkPonytailController.controller`，复用 `HunyuanRunner.fbx` 里的跑步动作，并覆盖 `Assets/QuizRush/Generated/Runner/Current/AnimatedCharacter.prefab`。
 
+## 如果原项目没有动作
+
+没有旧角色动作可复用时，`rig-character` 加 `--download-basic-animations`，先拿 Meshy 基础走/跑动作让角色跑起来：
+
+```bash
+python3 tools/ai3d/meshy_client.py rig-character \
+  --task-json Assets/QuizRush/Generated/AI3D/female_runner_pink_ponytail_01/source/meshy-task.json \
+  --name female_runner_pink_ponytail_01 \
+  --out Assets/QuizRush/Generated/AI3D/female_runner_pink_ponytail_01/rigged \
+  --height-meters 1.35 \
+  --download-basic-animations
+```
+
+输出在：
+
+```text
+Assets/QuizRush/Generated/AI3D/<asset_slug>/rigged/animations/
+├── walking_glb.glb
+├── walking_fbx.fbx
+├── walking_armature_glb.glb
+├── running_glb.glb
+├── running_fbx.fbx
+└── running_armature_glb.glb
+```
+
+Unity/Tuanjie 接入原则：新人物 FBX 设 Humanoid，动作 FBX 也设 Humanoid；Animator Controller 先只挂 `running_fbx` 循环状态即可；关闭 Root Motion，投影跑酷的人物位置继续由游戏代码控制。推荐路线是 Meshy basic running 先跑通，再用 Mixamo / Humanoid 兼容动作补 jump、slide、death，最后交给美术或动捕精修。
+
 ## 批量并行生成
 
 从图片目录批量生成：
